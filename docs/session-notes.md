@@ -76,3 +76,37 @@ Development history for Signal Over Noise project.
 - [ ] Consider adding data export/import
 - [ ] Add unit tests with Vitest
 - [ ] Deploy to Vercel
+
+---
+
+## 2026-01-23 - Polish & GitHub Push (continued)
+
+### Work Completed
+
+1. **CSS Refinements**
+   - Darkened dark mode background (`hsl(0 0% 7%)`) for better contrast
+   - Added `--font-sans` CSS variable for consistent typography
+   - Added global focus ring styles (`*:focus-visible`)
+   - Added `.tabular-nums` utility class for timer
+   - Improved antialiasing with `-webkit-font-smoothing` and `-moz-osx-font-smoothing`
+
+2. **Layout Simplification**
+   - Simplified `page.tsx` to just render `<TodoList />`
+   - Simplified icon config to use single `/icon.svg`
+   - Removed redundant apple-icon references
+
+3. **GitHub Repository**
+   - Pushed to https://github.com/RICHHOMELOANS/Signal-over-noise
+   - Initial commit: `8f95ea6`
+
+### Files Modified
+
+- `src/app/globals.css` - Enhanced theme variables, focus styles, typography
+- `src/app/layout.tsx` - Simplified icon config
+- `src/app/page.tsx` - Simplified to single component render
+- `docs/session-notes.md` - Updated with session history
+
+### Repository
+
+- **URL**: https://github.com/RICHHOMELOANS/Signal-over-noise
+- **Branch**: main
