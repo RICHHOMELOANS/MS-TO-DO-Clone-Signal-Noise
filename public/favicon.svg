@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="#1f1f1f"/>
+  <g fill="none" stroke="#fafafa" stroke-width="4" stroke-linecap="round">
+    <!-- Sound wave icon representing signal -->
+    <path d="M35 50 L35 50"/>
+    <path d="M45 35 L45 65"/>
+    <path d="M55 25 L55 75"/>
+    <path d="M65 35 L65 65"/>
+  </g>
+</svg>

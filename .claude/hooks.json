@@ -1,0 +1,9 @@
+{
+  "hooks": [
+    {
+      "event": "Stop",
+      "type": "prompt",
+      "prompt": "Before ending this session, please update the following files:\n\n1. **CLAUDE.md** - Update if any new patterns, components, or important technical decisions were made.\n\n2. **docs/session-notes.md** - Add a new entry with today's date including:\n   - Work completed this session\n   - Key decisions made\n   - Files created or modified\n   - Any issues encountered and how they were resolved\n   - Next steps or TODOs for future sessions\n\nThis ensures continuity across sessions and helps future Claude instances understand the project history."
+    }
+  ]
+}
