@@ -165,6 +165,24 @@ function usePausableTimer(timerState: TimerState, todayKey: string) {
 // Utility Functions
 // =============================================================================
 
+// Migrate old todos to new enhanced format
+function migrateTodo(todo: Partial<Todo> & { id: string; text: string; completed: boolean; createdAt: number; dateKey: string }): Todo {
+  return {
+    id: todo.id,
+    text: todo.text,
+    completed: todo.completed,
+    createdAt: todo.createdAt,
+    dateKey: todo.dateKey,
+    // Ensure enhanced fields have defaults
+    important: todo.important ?? false,
+    myDay: todo.myDay ?? false,
+    dueDate: todo.dueDate ?? null,
+    steps: Array.isArray(todo.steps) ? todo.steps : [],
+    notes: todo.notes ?? "",
+    listId: todo.listId ?? "tasks",
+  }
+}
+
 function formatTime(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
   const hours = Math.floor(totalSeconds / 3600)
@@ -564,7 +582,7 @@ const TaskItem = React.memo(function TaskItem({ todo, onToggle, onDelete, onTogg
               {formatDueDateShort(todo.dueDate)}
             </span>
           )}
-          {todo.steps.length > 0 && (
+          {todo.steps?.length > 0 && (
             <span className="text-xs text-muted-foreground">
               {todo.steps.filter(s => s.completed).length}/{todo.steps.length}
             </span>
@@ -723,7 +741,9 @@ export function TodoList() {
   const todayKey = getLocalDateKey()
   const todayDayIndex = new Date().getDay()
 
-  const [todos, setTodos, todosLoaded] = useLocalStorage<Todo[]>(STORAGE_KEY, [])
+  const [rawTodos, setTodos, todosLoaded] = useLocalStorage<Todo[]>(STORAGE_KEY, [])
+  // Migrate old todos to ensure all fields exist
+  const todos = React.useMemo(() => rawTodos.map(migrateTodo), [rawTodos])
   const [recurringTasks, setRecurringTasks, recurringLoaded] = useLocalStorage<RecurringTask[]>(RECURRING_KEY, [])
   const [pauseLogs, setPauseLogs, pauseLogsLoaded] = useLocalStorage<PauseLog[]>(PAUSE_LOG_KEY, [])
   const [recurringAddedDates, setRecurringAddedDates, recurringAddedLoaded] = useLocalStorage<string[]>(RECURRING_ADDED_KEY, [])
@@ -744,13 +764,21 @@ export function TodoList() {
   // Sidebar state
   const [selectedListId, setSelectedListId] = React.useState<ListId>("myday")
   const [searchQuery, setSearchQuery] = React.useState("")
-  const [selectedTask, setSelectedTask] = React.useState<Todo | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string | null>(null)
+  // Derive selectedTask from todos to keep it in sync automatically
+  const selectedTask = React.useMemo(
+    () => selectedTaskId ? todos.find(t => t.id === selectedTaskId) ?? null : null,
+    [selectedTaskId, todos]
+  )
 
   // Sync state
   const [showSyncModal, setShowSyncModal] = React.useState(false)
   const [syncState, setSyncState] = React.useState<LocalSyncState | null>(null)
   const [isSyncing, setIsSyncing] = React.useState(false)
+  const [syncError, setSyncError] = React.useState<string | null>(null)
   const syncTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  const retryCountRef = React.useRef(0)
+  const maxRetries = 3
 
   const timeRemaining = usePausableTimer(timerState, todayKey)
 
@@ -769,9 +797,10 @@ export function TodoList() {
     let filtered = todos
 
     if (searchQuery) {
+      const query = searchQuery.toLowerCase()
       filtered = filtered.filter(t =>
-        t.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.notes.toLowerCase().includes(searchQuery.toLowerCase())
+        t.text.toLowerCase().includes(query) ||
+        (t.notes || "").toLowerCase().includes(query)
       )
     } else {
       switch (selectedListId) {
@@ -798,21 +827,37 @@ export function TodoList() {
     }
   }, [todos, selectedListId, searchQuery, todayKey])
 
-  // Get task count for sidebar
-  const getTaskCount = React.useCallback((listId: ListId) => {
-    switch (listId) {
-      case "myday":
-        return todos.filter(t => (t.myDay || t.dateKey === todayKey) && !t.completed).length
-      case "important":
-        return todos.filter(t => t.important && !t.completed).length
-      case "planned":
-        return todos.filter(t => t.dueDate && !t.completed).length
-      case "tasks":
-        return todos.filter(t => (t.listId === "tasks" || !t.listId) && !t.completed).length
-      default:
-        return todos.filter(t => t.listId === listId && !t.completed).length
+  // Pre-compute task counts for all lists in a single pass
+  const taskCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {
+      myday: 0,
+      important: 0,
+      planned: 0,
+      tasks: 0,
     }
+
+    for (const t of todos) {
+      if (t.completed) continue
+
+      // System lists
+      if (t.myDay || t.dateKey === todayKey) counts.myday++
+      if (t.important) counts.important++
+      if (t.dueDate) counts.planned++
+      if (t.listId === "tasks" || !t.listId) counts.tasks++
+
+      // Custom lists
+      if (t.listId && t.listId !== "tasks") {
+        counts[t.listId] = (counts[t.listId] || 0) + 1
+      }
+    }
+
+    return counts
   }, [todos, todayKey])
+
+  // Get task count for sidebar (fast lookup)
+  const getTaskCount = React.useCallback((listId: ListId) => {
+    return taskCounts[listId] || 0
+  }, [taskCounts])
 
   // Count incomplete tasks from previous days
   const previousIncompleteTasks = React.useMemo(
@@ -854,13 +899,15 @@ export function TodoList() {
     }
   }, [todayKey])
 
-  // Debounced sync to server
-  const syncToServer = React.useCallback(async () => {
+  // Debounced sync to server with retry logic
+  const syncToServer = React.useCallback(async (retryCount = 0) => {
     if (!syncState) return
 
     setIsSyncing(true)
+    setSyncError(null)
+
     try {
-      await fetch("/api/sync", {
+      const response = await fetch("/api/sync", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -875,10 +922,33 @@ export function TodoList() {
           recurringAddedDates,
         }),
       })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || `Sync failed (${response.status})`)
+      }
+
+      // Success - reset retry count
+      retryCountRef.current = 0
     } catch (error) {
-      console.warn("Sync failed:", error)
+      const errorMessage = error instanceof Error ? error.message : "Sync failed"
+      console.warn("Sync failed:", errorMessage)
+
+      // Retry with exponential backoff
+      if (retryCount < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000) // Max 10s
+        retryCountRef.current = retryCount + 1
+        setTimeout(() => syncToServer(retryCount + 1), delay)
+        return // Don't clear isSyncing - we're retrying
+      }
+
+      // Max retries exceeded
+      setSyncError(errorMessage)
+      retryCountRef.current = 0
     } finally {
-      setIsSyncing(false)
+      if (retryCountRef.current === 0) {
+        setIsSyncing(false)
+      }
     }
   }, [syncState, todos, recurringTasks, pauseLogs, timerState, recurringAddedDates])
 
@@ -1065,10 +1135,8 @@ export function TodoList() {
 
   const deleteTodo = React.useCallback((id: string) => {
     setTodos((prev) => prev.filter((todo) => todo.id !== id))
-    if (selectedTask?.id === id) {
-      setSelectedTask(null)
-    }
-  }, [setTodos, selectedTask])
+    setSelectedTaskId((prevId) => prevId === id ? null : prevId)
+  }, [setTodos])
 
   // Enhanced task handlers
   const toggleImportant = React.useCallback((id: string) => {
@@ -1077,10 +1145,7 @@ export function TodoList() {
         todo.id === id ? { ...todo, important: !todo.important } : todo
       )
     )
-    if (selectedTask?.id === id) {
-      setSelectedTask((prev) => prev ? { ...prev, important: !prev.important } : null)
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   const toggleMyDay = React.useCallback((id: string) => {
     setTodos((prev) =>
@@ -1088,10 +1153,7 @@ export function TodoList() {
         todo.id === id ? { ...todo, myDay: !todo.myDay } : todo
       )
     )
-    if (selectedTask?.id === id) {
-      setSelectedTask((prev) => prev ? { ...prev, myDay: !prev.myDay } : null)
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   const updateTask = React.useCallback((id: string, updates: Partial<Todo>) => {
     setTodos((prev) =>
@@ -1099,22 +1161,16 @@ export function TodoList() {
         todo.id === id ? { ...todo, ...updates } : todo
       )
     )
-    if (selectedTask?.id === id) {
-      setSelectedTask((prev) => prev ? { ...prev, ...updates } : null)
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   const addStep = React.useCallback((taskId: string, stepTitle: string) => {
     const newStep: TaskStep = { id: crypto.randomUUID(), title: stepTitle, completed: false }
     setTodos((prev) =>
       prev.map((todo) =>
-        todo.id === taskId ? { ...todo, steps: [...todo.steps, newStep] } : todo
+        todo.id === taskId ? { ...todo, steps: [...(todo.steps || []), newStep] } : todo
       )
     )
-    if (selectedTask?.id === taskId) {
-      setSelectedTask((prev) => prev ? { ...prev, steps: [...prev.steps, newStep] } : null)
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   const toggleStepComplete = React.useCallback((taskId: string, stepId: string) => {
     setTodos((prev) =>
@@ -1122,41 +1178,24 @@ export function TodoList() {
         todo.id === taskId
           ? {
               ...todo,
-              steps: todo.steps.map((s) =>
+              steps: (todo.steps || []).map((s) =>
                 s.id === stepId ? { ...s, completed: !s.completed } : s
               ),
             }
           : todo
       )
     )
-    if (selectedTask?.id === taskId) {
-      setSelectedTask((prev) =>
-        prev
-          ? {
-              ...prev,
-              steps: prev.steps.map((s) =>
-                s.id === stepId ? { ...s, completed: !s.completed } : s
-              ),
-            }
-          : null
-      )
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   const deleteStep = React.useCallback((taskId: string, stepId: string) => {
     setTodos((prev) =>
       prev.map((todo) =>
         todo.id === taskId
-          ? { ...todo, steps: todo.steps.filter((s) => s.id !== stepId) }
+          ? { ...todo, steps: (todo.steps || []).filter((s) => s.id !== stepId) }
           : todo
       )
     )
-    if (selectedTask?.id === taskId) {
-      setSelectedTask((prev) =>
-        prev ? { ...prev, steps: prev.steps.filter((s) => s.id !== stepId) } : null
-      )
-    }
-  }, [setTodos, selectedTask])
+  }, [setTodos])
 
   // Custom list handlers
   const addCustomList = React.useCallback((list: TaskList) => {
@@ -1332,6 +1371,7 @@ export function TodoList() {
               onClick={() => setShowSyncModal(true)}
               isSynced={!!syncState}
               isSyncing={isSyncing}
+              syncError={syncError}
             />
             <ThemeToggle />
           </div>
@@ -1389,8 +1429,8 @@ export function TodoList() {
               onToggle={toggleTodo}
               onDelete={deleteTodo}
               onToggleImportant={toggleImportant}
-              onTaskClick={setSelectedTask}
-              selectedTaskId={selectedTask?.id}
+              onTaskClick={(todo) => setSelectedTaskId(todo.id)}
+              selectedTaskId={selectedTaskId}
               emptyMessage={searchQuery ? "No tasks found" : "No tasks yet"}
               emptySubMessage={searchQuery ? "Try a different search" : "Add your signal tasks to start"}
             />
@@ -1411,8 +1451,8 @@ export function TodoList() {
                   onToggle={toggleTodo}
                   onDelete={deleteTodo}
                   onToggleImportant={toggleImportant}
-                  onTaskClick={setSelectedTask}
-                  selectedTaskId={selectedTask?.id}
+                  onTaskClick={(todo) => setSelectedTaskId(todo.id)}
+                  selectedTaskId={selectedTaskId}
                 />
               </div>
             )}
@@ -1476,7 +1516,7 @@ export function TodoList() {
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
-          onClose={() => setSelectedTask(null)}
+          onClose={() => setSelectedTaskId(null)}
           onToggleComplete={() => toggleTodo(selectedTask.id)}
           onToggleImportant={() => toggleImportant(selectedTask.id)}
           onToggleMyDay={() => toggleMyDay(selectedTask.id)}

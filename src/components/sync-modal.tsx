@@ -380,27 +380,36 @@ interface SyncButtonProps {
   onClick: () => void
   isSynced: boolean
   isSyncing: boolean
+  syncError?: string | null
 }
 
-export function SyncButton({ onClick, isSynced, isSyncing }: SyncButtonProps) {
+export function SyncButton({ onClick, isSynced, isSyncing, syncError }: SyncButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center justify-center rounded-md size-9 absolute left-0 top-0 transition-colors",
-        isSynced
+        "inline-flex items-center justify-center rounded-md size-9 transition-colors relative",
+        syncError
+          ? "text-destructive hover:text-destructive/80"
+          : isSynced
           ? "text-green-500 hover:text-green-400"
           : "text-muted-foreground hover:text-foreground hover:bg-accent"
       )}
-      aria-label={isSynced ? "Sync enabled" : "Enable sync"}
+      aria-label={syncError ? `Sync error: ${syncError}` : isSynced ? "Sync enabled" : "Enable sync"}
+      title={syncError ? `Sync error: ${syncError}` : undefined}
     >
       {isSyncing ? (
         <Loader2 className="w-5 h-5 animate-spin" />
+      ) : syncError ? (
+        <CloudOff className="w-5 h-5" />
       ) : isSynced ? (
         <Cloud className="w-5 h-5" />
       ) : (
         <CloudOff className="w-5 h-5" />
+      )}
+      {syncError && (
+        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-destructive rounded-full" />
       )}
     </button>
   )

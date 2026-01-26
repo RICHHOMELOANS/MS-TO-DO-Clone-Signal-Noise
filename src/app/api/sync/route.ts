@@ -6,11 +6,19 @@ import { verifyAuthToken, type SyncedData } from '@/lib/sync'
 export async function GET(request: NextRequest) {
   try {
     const syncCode = request.headers.get('x-sync-code')
+    const authToken = request.headers.get('x-auth-token')
 
     if (!syncCode) {
       return NextResponse.json(
         { error: 'Sync code required' },
         { status: 400 }
+      )
+    }
+
+    if (!authToken) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
       )
     }
 
@@ -40,6 +48,15 @@ export async function GET(request: NextRequest) {
     }
 
     const syncedData: SyncedData = await response.json()
+
+    // Verify auth token using constant-time comparison
+    const isValidToken = await verifyAuthToken(authToken, normalizedCode, syncedData.salt)
+    if (!isValidToken) {
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
 
     // Return data without sensitive fields
     return NextResponse.json({
