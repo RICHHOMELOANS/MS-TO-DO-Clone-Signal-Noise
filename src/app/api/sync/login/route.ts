@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { list } from '@vercel/blob'
 import {
   verifyPin,
-  generateSessionToken,
+  generateAuthToken,
   type SyncedData,
 } from '@/lib/sync'
 
@@ -58,14 +58,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate new session token
-    const sessionToken = generateSessionToken()
+    // Generate auth token (derived from syncCode + salt)
+    const authToken = await generateAuthToken(normalizedCode, syncedData.salt)
 
     // Return success with data
     return NextResponse.json({
       success: true,
       syncCode: normalizedCode,
-      sessionToken,
+      authToken,
       data: {
         todos: syncedData.todos,
         recurringTasks: syncedData.recurringTasks,

@@ -739,6 +739,7 @@ export function TodoList() {
         headers: {
           "Content-Type": "application/json",
           "x-sync-code": syncState.syncCode,
+          "x-auth-token": syncState.authToken,
         },
         body: JSON.stringify({
           todos,

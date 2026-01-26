@@ -89,7 +89,7 @@ export function SyncModal({ isOpen, onClose, onSync, getCurrentData }: SyncModal
       // Save sync state
       const syncState: LocalSyncState = {
         syncCode: data.syncCode,
-        sessionToken: data.sessionToken,
+        authToken: data.authToken,
         lastSyncedAt: Date.now(),
       }
       setLocalSyncState(syncState)
@@ -134,7 +134,7 @@ export function SyncModal({ isOpen, onClose, onSync, getCurrentData }: SyncModal
       // Save sync state
       const syncState: LocalSyncState = {
         syncCode: data.syncCode,
-        sessionToken: data.sessionToken,
+        authToken: data.authToken,
         lastSyncedAt: data.data.lastSyncedAt,
       }
       setLocalSyncState(syncState)

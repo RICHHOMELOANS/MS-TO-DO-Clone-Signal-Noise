@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { list, put } from '@vercel/blob'
-import type { SyncedData } from '@/lib/sync'
+import { verifyAuthToken, type SyncedData } from '@/lib/sync'
 
 // GET - Fetch synced data
 export async function GET(request: NextRequest) {
@@ -63,11 +63,19 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const syncCode = request.headers.get('x-sync-code')
+    const authToken = request.headers.get('x-auth-token')
 
     if (!syncCode) {
       return NextResponse.json(
         { error: 'Sync code required' },
         { status: 400 }
+      )
+    }
+
+    if (!authToken) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
       )
     }
 
@@ -97,6 +105,15 @@ export async function POST(request: NextRequest) {
     }
 
     const existingData: SyncedData = await existingResponse.json()
+
+    // Verify auth token
+    const isValidToken = await verifyAuthToken(authToken, normalizedCode, existingData.salt)
+    if (!isValidToken) {
+      return NextResponse.json(
+        { error: 'Invalid authentication token' },
+        { status: 401 }
+      )
+    }
 
     // Get new data from request
     const body = await request.json()

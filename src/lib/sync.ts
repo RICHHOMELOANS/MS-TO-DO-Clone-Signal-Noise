@@ -18,10 +18,34 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Verify PIN against stored hash
+// Constant-time comparison to prevent timing attacks
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return result === 0
+}
+
+// Verify PIN against stored hash (timing-safe)
 export async function verifyPin(pin: string, salt: string, storedHash: string): Promise<boolean> {
   const hash = await hashPin(pin, salt)
-  return hash === storedHash
+  return constantTimeCompare(hash, storedHash)
+}
+
+// Generate auth token from sync code + salt (for API auth)
+export async function generateAuthToken(syncCode: string, salt: string): Promise<string> {
+  const data = new TextEncoder().encode(syncCode + salt + 'auth')
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Verify auth token
+export async function verifyAuthToken(token: string, syncCode: string, salt: string): Promise<boolean> {
+  const expectedToken = await generateAuthToken(syncCode, salt)
+  return constantTimeCompare(token, expectedToken)
 }
 
 // Types for synced data
@@ -79,7 +103,7 @@ export interface SyncedTimerState {
 // Client-side sync state stored in localStorage
 export interface LocalSyncState {
   syncCode: string
-  sessionToken: string // Simple token for API auth
+  authToken: string // Token for API auth (derived from syncCode + salt)
   lastSyncedAt: number
 }
 
@@ -102,11 +126,4 @@ export function setLocalSyncState(state: LocalSyncState | null): void {
   } else {
     localStorage.removeItem(SYNC_STATE_KEY)
   }
-}
-
-// Generate a simple session token
-export function generateSessionToken(): string {
-  const array = new Uint8Array(32)
-  crypto.getRandomValues(array)
-  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('')
 }

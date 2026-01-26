@@ -3,8 +3,12 @@ import { put, head } from '@vercel/blob'
 import {
   generateSyncCode,
   hashPin,
-  generateSessionToken,
+  generateAuthToken,
   type SyncedData,
+  type SyncedTodo,
+  type SyncedRecurringTask,
+  type SyncedTimerState,
+  type SyncedPauseLog,
 } from '@/lib/sync'
 
 export async function POST(request: NextRequest) {
@@ -13,10 +17,10 @@ export async function POST(request: NextRequest) {
     const { pin, existingData } = body as {
       pin: string
       existingData?: {
-        todos: unknown[]
-        recurringTasks: unknown[]
-        pauseLogs: unknown[]
-        timerState: unknown
+        todos: Partial<SyncedTodo>[]
+        recurringTasks: Partial<SyncedRecurringTask>[]
+        pauseLogs: SyncedPauseLog[]
+        timerState: Partial<SyncedTimerState> | null
         recurringAddedDates: string[]
       }
     }
@@ -57,7 +61,7 @@ export async function POST(request: NextRequest) {
     // Generate salt and hash PIN
     const salt = crypto.randomUUID()
     const pinHash = await hashPin(pin, salt)
-    const sessionToken = generateSessionToken()
+    const authToken = await generateAuthToken(syncCode, salt)
     const now = Date.now()
 
     // Create synced data structure
@@ -67,18 +71,31 @@ export async function POST(request: NextRequest) {
       salt,
       createdAt: now,
       lastSyncedAt: now,
-      todos: (existingData?.todos || []).map((t: any) => ({
-        ...t,
+      todos: (existingData?.todos || []).map((t) => ({
+        id: t.id || crypto.randomUUID(),
+        text: t.text || '',
+        completed: t.completed || false,
+        createdAt: t.createdAt || now,
+        dateKey: t.dateKey || '',
         updatedAt: t.updatedAt || now,
       })),
-      recurringTasks: (existingData?.recurringTasks || []).map((t: any) => ({
-        ...t,
+      recurringTasks: (existingData?.recurringTasks || []).map((t) => ({
+        id: t.id || crypto.randomUUID(),
+        text: t.text || '',
+        weekdays: t.weekdays || [],
         createdAt: t.createdAt || now,
         updatedAt: t.updatedAt || now,
       })),
-      pauseLogs: (existingData?.pauseLogs || []) as SyncedData['pauseLogs'],
+      pauseLogs: existingData?.pauseLogs || [],
       timerState: existingData?.timerState
-        ? { ...(existingData.timerState as any), updatedAt: now }
+        ? {
+            startTime: existingData.timerState.startTime ?? null,
+            pausedAt: existingData.timerState.pausedAt ?? null,
+            totalPausedTime: existingData.timerState.totalPausedTime || 0,
+            isPaused: existingData.timerState.isPaused || false,
+            dateKey: existingData.timerState.dateKey ?? null,
+            updatedAt: now,
+          }
         : null,
       recurringAddedDates: existingData?.recurringAddedDates || [],
     }
@@ -92,7 +109,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       syncCode,
-      sessionToken,
+      authToken,
     })
   } catch (error) {
     console.error('Setup error:', error)
