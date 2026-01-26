@@ -161,6 +161,31 @@ function formatTime(ms: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }
 
+function formatEndTime(endTimestamp: number): string {
+  const date = new Date(endTimestamp)
+  // Format in MST (America/Denver handles MST/MDT automatically)
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/Denver',
+  }) + ' MST'
+}
+
+function calculateEndTime(timerState: TimerState): number | null {
+  if (!timerState.startTime) return null
+
+  // End time = start time + 14 hours + total paused time + current pause duration
+  let endTime = timerState.startTime + FOURTEEN_HOURS_MS + timerState.totalPausedTime
+
+  // If currently paused, add the ongoing pause duration
+  if (timerState.isPaused && timerState.pausedAt) {
+    endTime += Date.now() - timerState.pausedAt
+  }
+
+  return endTime
+}
+
 // Use local date, not UTC
 function getLocalDateKey(date: Date = new Date()): string {
   const year = date.getFullYear()
@@ -301,6 +326,7 @@ interface TimerCardProps {
 function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, onReset, onPause, onResume }: TimerCardProps) {
   const isRunning = timerState.startTime !== null && timerState.dateKey === todayKey
   const isExpired = timeRemaining <= 0 && isRunning
+  const endTime = calculateEndTime(timerState)
 
   return (
     <div className="bg-card rounded-xl p-6 border border-border">
@@ -353,7 +379,12 @@ function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, on
       >
         {formatTime(timeRemaining)}
       </div>
-      <p className="text-center text-xs text-muted-foreground mt-3">
+      {isRunning && endTime && !isExpired && (
+        <p className="text-center text-sm font-medium text-accent mt-2">
+          Ends at {formatEndTime(endTime)}
+        </p>
+      )}
+      <p className="text-center text-xs text-muted-foreground mt-2">
         {isExpired
           ? "Time's up! Reset to start a new cycle"
           : timerState.isPaused && currentPauseReason
