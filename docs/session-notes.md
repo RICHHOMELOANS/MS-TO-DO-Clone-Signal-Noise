@@ -108,5 +108,6 @@ Development history for Signal Over Noise project.
 
 ### Repository
 
-- **URL**: https://github.com/RICHHOMELOANS/Signal-over-noise
+- **GitHub**: https://github.com/RICHHOMELOANS/Signal-over-noise
+- **Vercel**: https://v0-to-do-list-iyi9fax2m-rich-blanchards-projects.vercel.app
 - **Branch**: main

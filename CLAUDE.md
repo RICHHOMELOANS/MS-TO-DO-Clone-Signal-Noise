@@ -2,6 +2,11 @@
 
 A productivity PWA built on the Pareto principle: focus on the 20% that drives 80% of your progress.
 
+## Deployment
+
+- **Live**: https://v0-to-do-list-iyi9fax2m-rich-blanchards-projects.vercel.app
+- **GitHub**: https://github.com/RICHHOMELOANS/Signal-over-noise
+
 ## Project Overview
 
 This is a Next.js 16 application cloned from [v0-to-do-list-pwa.vercel.app](https://v0-to-do-list-pwa.vercel.app/). It features a 14-hour countdown timer that starts when you add your first task, encouraging intense focus cycles.
