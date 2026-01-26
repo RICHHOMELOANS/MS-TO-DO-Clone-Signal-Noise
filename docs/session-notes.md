@@ -96,7 +96,7 @@ Development history for Signal Over Noise project.
    - Removed redundant apple-icon references
 
 3. **GitHub Repository**
-   - Pushed to https://github.com/RICHHOMELOANS/Signal-over-noise
+   - Pushed to https://github.com/RICHHOMELOANS/v0-to-do-list-pwa
    - Initial commit: `8f95ea6`
 
 ### Files Modified
@@ -108,6 +108,5 @@ Development history for Signal Over Noise project.
 
 ### Repository
 
-- **GitHub**: https://github.com/RICHHOMELOANS/Signal-over-noise
-- **Vercel**: https://v0-to-do-list-iyi9fax2m-rich-blanchards-projects.vercel.app
+- **GitHub**: https://github.com/RICHHOMELOANS/v0-to-do-list-pwa
 - **Branch**: main

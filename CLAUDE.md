@@ -5,7 +5,7 @@ A productivity PWA built on the Pareto principle: focus on the 20% that drives 8
 ## Deployment
 
 - **Live**: https://v0-to-do-list-iyi9fax2m-rich-blanchards-projects.vercel.app
-- **GitHub**: https://github.com/RICHHOMELOANS/Signal-over-noise
+- **GitHub**: https://github.com/RICHHOMELOANS/v0-to-do-list-pwa
 
 ## Project Overview
 
