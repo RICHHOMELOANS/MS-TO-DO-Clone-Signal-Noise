@@ -4,6 +4,8 @@ import * as React from "react"
 import { Plus, Moon, Sun, Trash2, Check, RotateCcw, Pause, Play, ChevronDown, RefreshCw, Calendar } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
+import { SyncModal, SyncButton } from "@/components/sync-modal"
+import { getLocalSyncState, type LocalSyncState } from "@/lib/sync"
 
 // =============================================================================
 // Types
@@ -668,6 +670,12 @@ export function TodoList() {
   const [currentPauseReason, setCurrentPauseReason] = React.useState<PauseReason | null>(null)
   const [showRecurring, setShowRecurring] = React.useState(false)
 
+  // Sync state
+  const [showSyncModal, setShowSyncModal] = React.useState(false)
+  const [syncState, setSyncState] = React.useState<LocalSyncState | null>(null)
+  const [isSyncing, setIsSyncing] = React.useState(false)
+  const syncTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+
   const timeRemaining = usePausableTimer(timerState, todayKey)
 
   // Filter todos for today
@@ -686,9 +694,16 @@ export function TodoList() {
     [todos, todayKey]
   )
 
-  // Load timer state from localStorage
+  // Load timer state from localStorage and check sync state
   React.useEffect(() => {
     setMounted(true)
+
+    // Check for existing sync state
+    const existingSyncState = getLocalSyncState()
+    if (existingSyncState) {
+      setSyncState(existingSyncState)
+    }
+
     try {
       const storedTimer = localStorage.getItem(TIMER_KEY)
       if (storedTimer) {
@@ -712,6 +727,84 @@ export function TodoList() {
       console.warn("Error reading timer from localStorage:", error)
     }
   }, [todayKey])
+
+  // Debounced sync to server
+  const syncToServer = React.useCallback(async () => {
+    if (!syncState) return
+
+    setIsSyncing(true)
+    try {
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-sync-code": syncState.syncCode,
+        },
+        body: JSON.stringify({
+          todos,
+          recurringTasks,
+          pauseLogs,
+          timerState,
+          recurringAddedDates,
+        }),
+      })
+    } catch (error) {
+      console.warn("Sync failed:", error)
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [syncState, todos, recurringTasks, pauseLogs, timerState, recurringAddedDates])
+
+  // Trigger sync when data changes (debounced)
+  React.useEffect(() => {
+    if (!mounted || !syncState || !todosLoaded) return
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current)
+    }
+
+    syncTimeoutRef.current = setTimeout(() => {
+      syncToServer()
+    }, 1000) // 1 second debounce
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current)
+      }
+    }
+  }, [mounted, syncState, todos, recurringTasks, pauseLogs, timerState, recurringAddedDates, todosLoaded, syncToServer])
+
+  // Handle sync data received from login
+  const handleSyncData = React.useCallback((newSyncState: LocalSyncState, data: any) => {
+    setSyncState(newSyncState)
+
+    // Merge remote data with local data (remote wins for now)
+    if (data.todos) {
+      setTodos(data.todos)
+    }
+    if (data.recurringTasks) {
+      setRecurringTasks(data.recurringTasks)
+    }
+    if (data.pauseLogs) {
+      setPauseLogs(data.pauseLogs)
+    }
+    if (data.timerState) {
+      setTimerState(data.timerState)
+      localStorage.setItem(TIMER_KEY, JSON.stringify(data.timerState))
+    }
+    if (data.recurringAddedDates) {
+      setRecurringAddedDates(data.recurringAddedDates)
+    }
+  }, [setTodos, setRecurringTasks, setPauseLogs, setRecurringAddedDates])
+
+  // Get current data for sync setup
+  const getCurrentData = React.useCallback(() => ({
+    todos,
+    recurringTasks,
+    pauseLogs,
+    timerState,
+    recurringAddedDates,
+  }), [todos, recurringTasks, pauseLogs, timerState, recurringAddedDates])
 
   // Restore pause reason after pauseLogs are loaded
   React.useEffect(() => {
@@ -953,6 +1046,11 @@ export function TodoList() {
       <div className="max-w-lg mx-auto space-y-8">
         {/* Header */}
         <header className="text-center space-y-3 relative">
+          <SyncButton
+            onClick={() => setShowSyncModal(true)}
+            isSynced={!!syncState}
+            isSyncing={isSyncing}
+          />
           <ThemeToggle />
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">
             Signal Over Noise.
@@ -1063,6 +1161,14 @@ export function TodoList() {
         isOpen={showPauseModal}
         onSelect={handlePauseSelect}
         onCancel={() => setShowPauseModal(false)}
+      />
+
+      {/* Sync Modal */}
+      <SyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onSync={handleSyncData}
+        getCurrentData={getCurrentData}
       />
     </div>
   )
