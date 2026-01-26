@@ -1,11 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Plus, Moon, Sun, Trash2, Check, RotateCcw, Pause, Play, ChevronDown, RefreshCw, Calendar } from "lucide-react"
+import { Plus, Moon, Sun, Trash2, Check, RotateCcw, Pause, Play, ChevronDown, RefreshCw, Calendar, Star } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
 import { SyncModal, SyncButton } from "@/components/sync-modal"
 import { getLocalSyncState, type LocalSyncState } from "@/lib/sync"
+import { Sidebar, type ListId, type TaskList } from "@/components/sidebar"
+import { TaskDetailPanel, type TaskStep } from "@/components/task-detail-panel"
 
 // =============================================================================
 // Types
@@ -17,6 +19,13 @@ interface Todo {
   completed: boolean
   createdAt: number
   dateKey: string // YYYY-MM-DD format for day tracking (local time)
+  // Enhanced fields
+  important: boolean
+  myDay: boolean
+  dueDate: string | null
+  steps: TaskStep[]
+  notes: string
+  listId: string
 }
 
 interface RecurringTask {
@@ -53,6 +62,7 @@ const TIMER_KEY = "signal-over-noise-timer"
 const RECURRING_KEY = "signal-over-noise-recurring"
 const PAUSE_LOG_KEY = "signal-over-noise-pause-log"
 const RECURRING_ADDED_KEY = "signal-over-noise-recurring-added"
+const CUSTOM_LISTS_KEY = "signal-over-noise-custom-lists"
 const FOURTEEN_HOURS_MS = 14 * 60 * 60 * 1000
 const MAX_PAUSE_LOGS = 100 // Prevent unbounded growth
 
@@ -483,19 +493,40 @@ interface TaskItemProps {
   todo: Todo
   onToggle: (id: string) => void
   onDelete: (id: string) => void
+  onToggleImportant: (id: string) => void
+  onClick: (todo: Todo) => void
+  isSelected?: boolean
 }
 
-const TaskItem = React.memo(function TaskItem({ todo, onToggle, onDelete }: TaskItemProps) {
+function formatDueDateShort(dateStr: string | null): string | null {
+  if (!dateStr) return null
+  const date = new Date(dateStr)
+  const today = new Date()
+  const todayStr = today.toISOString().split("T")[0]
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0]
+  if (dateStr === todayStr) return "Today"
+  if (dateStr === tomorrowStr) return "Tomorrow"
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+function isOverdue(dateStr: string | null): boolean {
+  if (!dateStr) return false
+  return new Date(dateStr) < new Date(new Date().toISOString().split("T")[0])
+}
+
+const TaskItem = React.memo(function TaskItem({ todo, onToggle, onDelete, onToggleImportant, onClick, isSelected }: TaskItemProps) {
   return (
     <div
+      onClick={() => onClick(todo)}
       className={cn(
-        "group flex items-center gap-3 p-4 rounded-xl border border-border bg-card transition-all",
+        "group flex items-center gap-3 p-4 rounded-xl border bg-card transition-all cursor-pointer",
+        isSelected ? "border-primary shadow-md" : "border-border hover:border-muted-foreground/50",
         todo.completed && "opacity-60"
       )}
     >
       <button
         type="button"
-        onClick={() => onToggle(todo.id)}
+        onClick={(e) => { e.stopPropagation(); onToggle(todo.id) }}
         className={cn(
           "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all shrink-0",
           todo.completed
@@ -507,17 +538,50 @@ const TaskItem = React.memo(function TaskItem({ todo, onToggle, onDelete }: Task
       >
         {todo.completed && <Check className="w-4 h-4" />}
       </button>
-      <span
-        className={cn(
-          "flex-1 text-sm break-words",
-          todo.completed && "line-through text-muted-foreground"
-        )}
-      >
-        {todo.text}
-      </span>
+      <div className="flex-1 min-w-0">
+        <span
+          className={cn(
+            "text-sm break-words block",
+            todo.completed && "line-through text-muted-foreground"
+          )}
+        >
+          {todo.text}
+        </span>
+        {/* Meta info */}
+        <div className="flex items-center gap-2 mt-0.5">
+          {todo.myDay && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Sun size={12} />
+              My Day
+            </span>
+          )}
+          {todo.dueDate && (
+            <span className={cn(
+              "flex items-center gap-1 text-xs",
+              isOverdue(todo.dueDate) && !todo.completed ? "text-destructive" : "text-muted-foreground"
+            )}>
+              <Calendar size={12} />
+              {formatDueDateShort(todo.dueDate)}
+            </span>
+          )}
+          {todo.steps.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {todo.steps.filter(s => s.completed).length}/{todo.steps.length}
+            </span>
+          )}
+        </div>
+      </div>
       <button
         type="button"
-        onClick={() => onDelete(todo.id)}
+        onClick={(e) => { e.stopPropagation(); onToggleImportant(todo.id) }}
+        className="p-1 hover:bg-accent rounded transition-colors shrink-0"
+        aria-label={todo.important ? "Remove from important" : "Mark as important"}
+      >
+        <Star className={cn("w-4 h-4", todo.important ? "fill-primary text-primary" : "text-muted-foreground")} />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(todo.id) }}
         className="opacity-60 sm:opacity-0 sm:group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1 shrink-0"
         aria-label={`Delete task: ${todo.text}`}
       >
@@ -575,12 +639,15 @@ interface TaskListProps {
   todos: Todo[]
   onToggle: (id: string) => void
   onDelete: (id: string) => void
+  onToggleImportant: (id: string) => void
+  onTaskClick: (todo: Todo) => void
+  selectedTaskId?: string | null
   title?: string
   emptyMessage?: string
   emptySubMessage?: string
 }
 
-function TaskList({ todos, onToggle, onDelete, title, emptyMessage = "No tasks yet", emptySubMessage }: TaskListProps) {
+function TaskList({ todos, onToggle, onDelete, onToggleImportant, onTaskClick, selectedTaskId, title, emptyMessage = "No tasks yet", emptySubMessage }: TaskListProps) {
   return (
     <div className="space-y-3">
       {title && (
@@ -601,6 +668,9 @@ function TaskList({ todos, onToggle, onDelete, title, emptyMessage = "No tasks y
               todo={todo}
               onToggle={onToggle}
               onDelete={onDelete}
+              onToggleImportant={onToggleImportant}
+              onClick={onTaskClick}
+              isSelected={selectedTaskId === todo.id}
             />
           ))}
         </div>
@@ -657,6 +727,7 @@ export function TodoList() {
   const [recurringTasks, setRecurringTasks, recurringLoaded] = useLocalStorage<RecurringTask[]>(RECURRING_KEY, [])
   const [pauseLogs, setPauseLogs, pauseLogsLoaded] = useLocalStorage<PauseLog[]>(PAUSE_LOG_KEY, [])
   const [recurringAddedDates, setRecurringAddedDates, recurringAddedLoaded] = useLocalStorage<string[]>(RECURRING_ADDED_KEY, [])
+  const [customLists, setCustomLists, customListsLoaded] = useLocalStorage<TaskList[]>(CUSTOM_LISTS_KEY, [])
 
   const [timerState, setTimerState] = React.useState<TimerState>({
     startTime: null,
@@ -669,6 +740,11 @@ export function TodoList() {
   const [showPauseModal, setShowPauseModal] = React.useState(false)
   const [currentPauseReason, setCurrentPauseReason] = React.useState<PauseReason | null>(null)
   const [showRecurring, setShowRecurring] = React.useState(false)
+
+  // Sidebar state
+  const [selectedListId, setSelectedListId] = React.useState<ListId>("myday")
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [selectedTask, setSelectedTask] = React.useState<Todo | null>(null)
 
   // Sync state
   const [showSyncModal, setShowSyncModal] = React.useState(false)
@@ -687,6 +763,56 @@ export function TodoList() {
     () => todayTodos.filter(t => t.completed).length,
     [todayTodos]
   )
+
+  // Filter todos based on selected list
+  const filteredTodos = React.useMemo(() => {
+    let filtered = todos
+
+    if (searchQuery) {
+      filtered = filtered.filter(t =>
+        t.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.notes.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    } else {
+      switch (selectedListId) {
+        case "myday":
+          filtered = filtered.filter(t => t.myDay || t.dateKey === todayKey)
+          break
+        case "important":
+          filtered = filtered.filter(t => t.important)
+          break
+        case "planned":
+          filtered = filtered.filter(t => t.dueDate)
+          break
+        case "tasks":
+          filtered = filtered.filter(t => t.listId === "tasks" || !t.listId)
+          break
+        default:
+          filtered = filtered.filter(t => t.listId === selectedListId)
+      }
+    }
+
+    return {
+      incomplete: filtered.filter(t => !t.completed),
+      completed: filtered.filter(t => t.completed),
+    }
+  }, [todos, selectedListId, searchQuery, todayKey])
+
+  // Get task count for sidebar
+  const getTaskCount = React.useCallback((listId: ListId) => {
+    switch (listId) {
+      case "myday":
+        return todos.filter(t => (t.myDay || t.dateKey === todayKey) && !t.completed).length
+      case "important":
+        return todos.filter(t => t.important && !t.completed).length
+      case "planned":
+        return todos.filter(t => t.dueDate && !t.completed).length
+      case "tasks":
+        return todos.filter(t => (t.listId === "tasks" || !t.listId) && !t.completed).length
+      default:
+        return todos.filter(t => t.listId === listId && !t.completed).length
+    }
+  }, [todos, todayKey])
 
   // Count incomplete tasks from previous days
   const previousIncompleteTasks = React.useMemo(
@@ -846,6 +972,12 @@ export function TodoList() {
             completed: false,
             createdAt: Date.now(),
             dateKey: todayKey,
+            important: false,
+            myDay: true,
+            dueDate: null,
+            steps: [],
+            notes: "",
+            listId: "tasks",
           })
         }
       }
@@ -870,6 +1002,13 @@ export function TodoList() {
       completed: false,
       createdAt: Date.now(),
       dateKey: todayKey,
+      // Enhanced fields
+      important: selectedListId === "important",
+      myDay: selectedListId === "myday",
+      dueDate: selectedListId === "planned" ? new Date().toISOString().split("T")[0] : null,
+      steps: [],
+      notes: "",
+      listId: selectedListId === "myday" || selectedListId === "important" || selectedListId === "planned" ? "tasks" : selectedListId,
     }
 
     setTodos((prev) => {
@@ -889,7 +1028,7 @@ export function TodoList() {
       }
       return [todo, ...prev]
     })
-  }, [setTodos, timerState.startTime, timerState.dateKey, todayKey])
+  }, [setTodos, timerState.startTime, timerState.dateKey, todayKey, selectedListId])
 
   const addRecurringTask = React.useCallback((text: string) => {
     const task: RecurringTask = {
@@ -926,7 +1065,111 @@ export function TodoList() {
 
   const deleteTodo = React.useCallback((id: string) => {
     setTodos((prev) => prev.filter((todo) => todo.id !== id))
-  }, [setTodos])
+    if (selectedTask?.id === id) {
+      setSelectedTask(null)
+    }
+  }, [setTodos, selectedTask])
+
+  // Enhanced task handlers
+  const toggleImportant = React.useCallback((id: string) => {
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === id ? { ...todo, important: !todo.important } : todo
+      )
+    )
+    if (selectedTask?.id === id) {
+      setSelectedTask((prev) => prev ? { ...prev, important: !prev.important } : null)
+    }
+  }, [setTodos, selectedTask])
+
+  const toggleMyDay = React.useCallback((id: string) => {
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === id ? { ...todo, myDay: !todo.myDay } : todo
+      )
+    )
+    if (selectedTask?.id === id) {
+      setSelectedTask((prev) => prev ? { ...prev, myDay: !prev.myDay } : null)
+    }
+  }, [setTodos, selectedTask])
+
+  const updateTask = React.useCallback((id: string, updates: Partial<Todo>) => {
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === id ? { ...todo, ...updates } : todo
+      )
+    )
+    if (selectedTask?.id === id) {
+      setSelectedTask((prev) => prev ? { ...prev, ...updates } : null)
+    }
+  }, [setTodos, selectedTask])
+
+  const addStep = React.useCallback((taskId: string, stepTitle: string) => {
+    const newStep: TaskStep = { id: crypto.randomUUID(), title: stepTitle, completed: false }
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === taskId ? { ...todo, steps: [...todo.steps, newStep] } : todo
+      )
+    )
+    if (selectedTask?.id === taskId) {
+      setSelectedTask((prev) => prev ? { ...prev, steps: [...prev.steps, newStep] } : null)
+    }
+  }, [setTodos, selectedTask])
+
+  const toggleStepComplete = React.useCallback((taskId: string, stepId: string) => {
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === taskId
+          ? {
+              ...todo,
+              steps: todo.steps.map((s) =>
+                s.id === stepId ? { ...s, completed: !s.completed } : s
+              ),
+            }
+          : todo
+      )
+    )
+    if (selectedTask?.id === taskId) {
+      setSelectedTask((prev) =>
+        prev
+          ? {
+              ...prev,
+              steps: prev.steps.map((s) =>
+                s.id === stepId ? { ...s, completed: !s.completed } : s
+              ),
+            }
+          : null
+      )
+    }
+  }, [setTodos, selectedTask])
+
+  const deleteStep = React.useCallback((taskId: string, stepId: string) => {
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === taskId
+          ? { ...todo, steps: todo.steps.filter((s) => s.id !== stepId) }
+          : todo
+      )
+    )
+    if (selectedTask?.id === taskId) {
+      setSelectedTask((prev) =>
+        prev ? { ...prev, steps: prev.steps.filter((s) => s.id !== stepId) } : null
+      )
+    }
+  }, [setTodos, selectedTask])
+
+  // Custom list handlers
+  const addCustomList = React.useCallback((list: TaskList) => {
+    setCustomLists((prev) => [...prev, list])
+  }, [setCustomLists])
+
+  const deleteCustomList = React.useCallback((id: string) => {
+    setCustomLists((prev) => prev.filter((l) => l.id !== id))
+    setTodos((prev) => prev.filter((t) => t.listId !== id))
+    if (selectedListId === id) {
+      setSelectedListId("myday")
+    }
+  }, [setCustomLists, setTodos, selectedListId])
 
   const resetTimer = React.useCallback(() => {
     const now = Date.now()
@@ -1042,120 +1285,208 @@ export function TodoList() {
     )
   }
 
+  // Get list title for header
+  const getListTitle = () => {
+    if (searchQuery) return "Search Results"
+    switch (selectedListId) {
+      case "myday": return "My Day"
+      case "important": return "Important"
+      case "planned": return "Planned"
+      case "tasks": return "Tasks"
+      default:
+        const customList = customLists.find(l => l.id === selectedListId)
+        return customList?.name || "Tasks"
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
-      <div className="max-w-lg mx-auto space-y-8">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar
+        selectedListId={selectedListId}
+        onSelectList={setSelectedListId}
+        customLists={customLists}
+        onAddList={addCustomList}
+        onDeleteList={deleteCustomList}
+        getTaskCount={getTaskCount}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="text-center space-y-3 relative">
-          <SyncButton
-            onClick={() => setShowSyncModal(true)}
-            isSynced={!!syncState}
-            isSyncing={isSyncing}
-          />
-          <ThemeToggle />
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-balance">
-            Signal Over Noise.
-          </h1>
-          <p className="text-destructive text-sm text-pretty">
-            Focus on the 20% that drives 80% of your progress. Mute everything else.
-          </p>
+        <header className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">
+              {getListTitle()}
+            </h1>
+            {selectedListId === "myday" && !searchQuery && (
+              <span className="text-sm text-muted-foreground">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <SyncButton
+              onClick={() => setShowSyncModal(true)}
+              isSynced={!!syncState}
+              isSyncing={isSyncing}
+            />
+            <ThemeToggle />
+          </div>
         </header>
 
-        <TimerCard
-          timeRemaining={timeRemaining}
-          timerState={timerState}
-          currentPauseReason={currentPauseReason}
-          todayKey={todayKey}
-          onReset={resetTimer}
-          onPause={handlePauseClick}
-          onResume={handleResume}
-        />
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+            {/* Timer and Progress - Only show on My Day */}
+            {selectedListId === "myday" && !searchQuery && (
+              <>
+                <TimerCard
+                  timeRemaining={timeRemaining}
+                  timerState={timerState}
+                  currentPauseReason={currentPauseReason}
+                  todayKey={todayKey}
+                  onReset={resetTimer}
+                  onPause={handlePauseClick}
+                  onResume={handleResume}
+                />
 
-        <ProgressCard
-          completed={completedCount}
-          total={todayTodos.length}
-        />
+                <ProgressCard
+                  completed={completedCount}
+                  total={todayTodos.length}
+                />
 
-        {/* Rollover Banner */}
-        {previousIncompleteTasks.length > 0 && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
-                {previousIncompleteTasks.length} incomplete task{previousIncompleteTasks.length > 1 ? 's' : ''} from previous days
-              </p>
-              <p className="text-xs text-muted-foreground">Roll them over to today?</p>
-            </div>
-            <button
-              type="button"
-              onClick={rolloverTasks}
-              className="flex items-center gap-2 px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-md text-sm font-medium transition-colors shrink-0"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Rollover
-            </button>
-          </div>
-        )}
+                {/* Rollover Banner */}
+                {previousIncompleteTasks.length > 0 && (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
+                        {previousIncompleteTasks.length} incomplete task{previousIncompleteTasks.length > 1 ? 's' : ''} from previous days
+                      </p>
+                      <p className="text-xs text-muted-foreground">Roll them over to today?</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={rolloverTasks}
+                      className="flex items-center gap-2 px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-md text-sm font-medium transition-colors shrink-0"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Rollover
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
 
-        <TaskForm onAdd={addTodo} />
+            {/* Add Task Form */}
+            <TaskForm onAdd={addTodo} />
 
-        <TaskList
-          todos={todayTodos}
-          onToggle={toggleTodo}
-          onDelete={deleteTodo}
-          title={`Today's Tasks — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`}
-          emptyMessage="No tasks yet"
-          emptySubMessage="Add your signal tasks to start the 14-hour countdown"
-        />
+            {/* Task List - Incomplete */}
+            <TaskList
+              todos={filteredTodos.incomplete}
+              onToggle={toggleTodo}
+              onDelete={deleteTodo}
+              onToggleImportant={toggleImportant}
+              onTaskClick={setSelectedTask}
+              selectedTaskId={selectedTask?.id}
+              emptyMessage={searchQuery ? "No tasks found" : "No tasks yet"}
+              emptySubMessage={searchQuery ? "Try a different search" : "Add your signal tasks to start"}
+            />
 
-        {/* Recurring Tasks Section */}
-        <section className="border-t border-border pt-8 space-y-4">
-          <button
-            type="button"
-            onClick={() => setShowRecurring(!showRecurring)}
-            className="flex items-center justify-between w-full text-left"
-          >
-            <h3 className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Weekday Recurring Tasks
-            </h3>
-            <ChevronDown className={cn(
-              "w-4 h-4 text-muted-foreground transition-transform",
-              showRecurring && "rotate-180"
-            )} />
-          </button>
+            {/* Completed Tasks */}
+            {filteredTodos.completed.length > 0 && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                  <span>Completed ({filteredTodos.completed.length})</span>
+                </button>
+                <TaskList
+                  todos={filteredTodos.completed}
+                  onToggle={toggleTodo}
+                  onDelete={deleteTodo}
+                  onToggleImportant={toggleImportant}
+                  onTaskClick={setSelectedTask}
+                  selectedTaskId={selectedTask?.id}
+                />
+              </div>
+            )}
 
-          {showRecurring && (
-            <div className="space-y-4">
-              <TaskForm
-                onAdd={addRecurringTask}
-                placeholder="Add a recurring task..."
-              />
-              {recurringTasks.length === 0 ? (
-                <p className="text-center text-sm text-muted-foreground py-4">
-                  No recurring tasks. Add tasks that repeat on specific days.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {recurringTasks.map((task) => (
-                    <RecurringTaskItem
-                      key={task.id}
-                      task={task}
-                      onToggleDay={toggleRecurringDay}
-                      onDelete={deleteRecurringTask}
+            {/* Recurring Tasks Section - Only on My Day */}
+            {selectedListId === "myday" && !searchQuery && (
+              <section className="border-t border-border pt-8 space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setShowRecurring(!showRecurring)}
+                  className="flex items-center justify-between w-full text-left"
+                >
+                  <h3 className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                    Weekday Recurring Tasks
+                  </h3>
+                  <ChevronDown className={cn(
+                    "w-4 h-4 text-muted-foreground transition-transform",
+                    showRecurring && "rotate-180"
+                  )} />
+                </button>
+
+                {showRecurring && (
+                  <div className="space-y-4">
+                    <TaskForm
+                      onAdd={addRecurringTask}
+                      placeholder="Add a recurring task..."
                     />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+                    {recurringTasks.length === 0 ? (
+                      <p className="text-center text-sm text-muted-foreground py-4">
+                        No recurring tasks. Add tasks that repeat on specific days.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {recurringTasks.map((task) => (
+                          <RecurringTaskItem
+                            key={task.id}
+                            task={task}
+                            onToggleDay={toggleRecurringDay}
+                            onDelete={deleteRecurringTask}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
-        <Manifesto />
+            {/* Manifesto - Only on My Day */}
+            {selectedListId === "myday" && !searchQuery && <Manifesto />}
 
-        {/* Footer */}
-        <footer className="text-center text-xs text-muted-foreground pt-8 pb-4">
-          <p>Add to home screen for the best experience</p>
-        </footer>
+            {/* Footer */}
+            <footer className="text-center text-xs text-muted-foreground pt-8 pb-4">
+              <p>Add to home screen for the best experience</p>
+            </footer>
+          </div>
+        </div>
       </div>
+
+      {/* Task Detail Panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onToggleComplete={() => toggleTodo(selectedTask.id)}
+          onToggleImportant={() => toggleImportant(selectedTask.id)}
+          onToggleMyDay={() => toggleMyDay(selectedTask.id)}
+          onUpdate={(updates) => updateTask(selectedTask.id, updates)}
+          onDelete={() => deleteTodo(selectedTask.id)}
+          onAddStep={(title) => addStep(selectedTask.id, title)}
+          onToggleStepComplete={(stepId) => toggleStepComplete(selectedTask.id, stepId)}
+          onDeleteStep={(stepId) => deleteStep(selectedTask.id, stepId)}
+        />
+      )}
 
       {/* Pause Modal */}
       <PauseModal
