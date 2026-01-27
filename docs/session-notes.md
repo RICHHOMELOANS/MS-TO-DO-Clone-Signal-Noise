@@ -110,3 +110,99 @@ Development history for Signal Over Noise project.
 
 - **GitHub**: https://github.com/RICHHOMELOANS/v0-to-do-list-pwa
 - **Branch**: main
+
+---
+
+## 2026-01-26 - MS To-Do UI & Security Audit Fixes
+
+### Work Completed
+
+1. **MS To-Do Style UI Implementation**
+   - Added collapsible sidebar with smart lists (My Day, Important, Planned, Tasks)
+   - Added custom lists support with add/delete functionality
+   - Added task detail panel with steps, notes, due date, My Day toggle
+   - Added search functionality across all tasks
+   - Created `sidebar.tsx` and `task-detail-panel.tsx` components
+
+2. **Vercel Blob Sync System**
+   - Implemented multi-device sync using Vercel Blob storage
+   - PIN-based authentication with SHA-256 hashing
+   - Setup flow: user creates 4-digit PIN, gets SIGNAL-XXXXXX code
+   - Login flow: enter sync code + PIN to sync across devices
+   - Created `sync-modal.tsx` with setup/login modals
+   - Created API routes: `/api/sync`, `/api/sync/setup`, `/api/sync/login`
+
+3. **Security Audit & Fixes**
+   - Added authentication to GET `/api/sync` endpoint (was missing auth)
+   - Implemented constant-time comparison for timing attack prevention
+   - Added data migration helper `migrateTodo()` for backward compatibility
+   - Fixed search crash on undefined notes/steps with null-safe checks
+   - Fixed selectedTask callback dependency churn (use ID instead of object)
+   - Added sync error state with UI feedback (red indicator)
+   - Added sync retry logic with exponential backoff (1s, 2s, 4s, max 3 retries)
+   - Optimized task count filtering with pre-computed memoization
+
+4. **Enhanced Todo Interface**
+   - Added fields: `important`, `myDay`, `dueDate`, `steps`, `notes`, `listId`
+   - Added `dateKey` for daily tracking
+   - Added `TaskStep` interface for subtasks
+
+5. **Documentation Updates**
+   - Updated `CLAUDE.md` with comprehensive project context
+   - Updated `docs/session-notes.md` with session history
+   - `.claude/hooks.json` already existed for Stop event
+
+### Key Decisions
+
+- **Vercel Blob over Postgres**: Simpler setup, no schema management, JSON storage
+- **PIN-based auth**: Simple 4-digit PIN + generated sync code for cross-device
+- **Optimistic updates**: Write to localStorage immediately, debounce API sync (1s)
+- **Last-write-wins**: Simple conflict resolution strategy
+- **Data migration**: Auto-migrate old todos to new schema with defaults
+
+### Files Created/Modified
+
+**Created:**
+- `src/components/sidebar.tsx` - Collapsible sidebar component
+- `src/components/task-detail-panel.tsx` - Task editing panel
+- `src/components/sync-modal.tsx` - Sync setup/login UI
+- `src/lib/sync.ts` - Sync utilities, auth token generation
+- `src/app/api/sync/route.ts` - GET/POST sync data
+- `src/app/api/sync/setup/route.ts` - Create sync account
+- `src/app/api/sync/login/route.ts` - Login with code + PIN
+- `.env.local` - Vercel Blob token
+
+**Modified:**
+- `src/components/todo-list.tsx` - Major rewrite (~1500 lines now)
+  - Added sidebar integration
+  - Added task detail panel
+  - Added sync state management
+  - Added retry logic
+  - Added data migration
+  - Optimized task counts
+- `CLAUDE.md` - Comprehensive update with new architecture
+- `docs/session-notes.md` - Added this session
+
+### Issues Encountered
+
+1. **Dev server stuck compiling**: Multiple zombie node.exe processes, fixed with `taskkill` and removing `.next` folder
+2. **Lock file issues**: Needed to clean up `.next/dev/lock` after crashes
+3. **Missing .env.local**: User couldn't sync without BLOB_READ_WRITE_TOKEN
+4. **Page not loading**: Compilation stuck, resolved by cleaning cache and restarting
+
+### Security Improvements
+
+- GET endpoint now requires auth token (was publicly readable before)
+- Constant-time string comparison prevents timing attacks
+- Salt stored per-user for PIN hashing
+- Auth token derived from PIN + sync code + salt
+- Retry with exponential backoff prevents hammering on failures
+
+### Next Steps
+
+- [ ] Test sync across multiple devices
+- [ ] Add offline queue for sync when reconnecting
+- [ ] Add last-modified timestamps for better conflict resolution
+- [ ] Consider WebSocket for real-time sync
+- [ ] Add data export/import functionality
+- [ ] Deploy updated version to Vercel
