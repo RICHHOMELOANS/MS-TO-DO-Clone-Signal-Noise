@@ -282,13 +282,33 @@ Development history for Signal Over Noise project.
    - Updated `CLAUDE.md` with new repo URL
    - Updated `docs/session-notes.md` with migration notes
 
+4. **Vercel Cleanup Instructions**
+   - Documented steps to clean up old Vercel project domains
+   - Options: remove extra domains, disconnect Blob storage, or delete project entirely
+
 ### Repository Structure
 
 - **New Repo**: https://github.com/RICHHOMELOANS/MS-TO-DO-Clone-Signal-Noise (this project)
 - **Old Repo**: https://github.com/RICHHOMELOANS/v0-to-do-list-pwa (original simple todo app)
 
+### Vercel Cleanup Steps
+
+To clean up old `v0-to-do-list-pwa` Vercel project:
+1. Go to Vercel Dashboard → select project
+2. **Settings** → **Domains** → remove extra domains
+3. **Settings** → **Environment Variables** → delete `BLOB_READ_WRITE_TOKEN`
+4. **Storage** → disconnect Blob store from old project
+5. Or: **Settings** → scroll down → **Delete Project**
+
+Then import new repo `MS-TO-DO-Clone-Signal-Noise` to Vercel and connect Blob storage there.
+
 ### Next Steps
 
+- [x] Create new GitHub repo
+- [x] Push code to new repo as main
+- [x] Delete RHL-To-Do branch from old repo
+- [x] Update documentation
+- [ ] Clean up old Vercel project (domains, storage)
 - [ ] Deploy new repo to Vercel
 - [ ] Configure Vercel Blob storage for new deployment
 - [ ] Set up BLOB_READ_WRITE_TOKEN environment variable
