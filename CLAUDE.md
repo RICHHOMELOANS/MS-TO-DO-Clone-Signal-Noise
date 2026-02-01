@@ -21,6 +21,7 @@ A productivity PWA built on the Pareto principle: focus on the 20% that drives 8
 | State | React hooks + localStorage + Vercel Blob sync |
 | Cloud Storage | Vercel Blob (`@vercel/blob`) |
 | UI Primitives | Radix UI (checkbox, dialog, dropdown, etc.) |
+| Linting | ESLint 9 (flat config) |
 
 ## Project Structure
 
@@ -38,18 +39,24 @@ signal-over-noise/
 │   │   ├── icon.tsx              # Dynamic favicon (S on dark bg)
 │   │   └── apple-icon.tsx        # Apple touch icon
 │   ├── components/
-│   │   ├── todo-list.tsx         # Main app component (~1547 lines)
-│   │   ├── sidebar.tsx           # Collapsible sidebar (~245 lines)
-│   │   ├── task-detail-panel.tsx # Task editing panel (~267 lines)
+│   │   ├── todo-list.tsx         # Main app component (~1200 lines)
+│   │   ├── sidebar.tsx           # Bucket-grouped sidebar (~280 lines)
+│   │   ├── task-detail-panel.tsx # Task editing panel (~470 lines)
 │   │   ├── sync-modal.tsx        # Sync dialogs (~416 lines)
 │   │   └── theme-provider.tsx    # next-themes wrapper (12 lines)
 │   └── lib/
+│       ├── data-seed.ts          # Seed data with buckets & todos (~330 lines)
 │       ├── sync.ts               # Auth utilities & types (~130 lines)
 │       └── utils.ts              # cn() class merging utility
 ├── docs/
 │   └── session-notes.md          # Development history
 ├── public/
 │   └── manifest.json             # PWA manifest
+├── .claude/
+│   └── hooks.json                # Claude Code hooks (Stop event for docs)
+├── Merge/                        # Merge installation files
+│   └── install-merge.ps1         # PowerShell installer script
+├── eslint.config.mjs             # ESLint 9 flat config
 ├── ms-todo-clone.jsx             # Standalone MS To-Do prototype (~807 lines)
 └── .env.local                    # BLOB_READ_WRITE_TOKEN
 ```
@@ -60,11 +67,14 @@ signal-over-noise/
 
 **State Management:**
 - `todos` - Task array (localStorage persisted)
+- `buckets` - Top-level bucket groupings (localStorage persisted)
+- `bucketGroups` - Lists within buckets (localStorage persisted)
 - `timerState` - 14-hour countdown with pause tracking
 - `recurringTasks` - Auto-add tasks on specific weekdays
 - `pauseLogs` - Pause events with reasons and timestamps
 - `customLists` - User-created task lists
 - `syncState` - Multi-device sync credentials
+- `showCompleted` - Toggle completed tasks visibility
 
 **Sub-Components:**
 | Component | Purpose |
@@ -73,7 +83,7 @@ signal-over-noise/
 | `ThemeToggle` | Dark/light mode (hydration-safe) |
 | `TimerCard` | 14-hour countdown with pause/resume |
 | `ProgressCard` | Task completion percentage |
-| `TaskForm` | New task input |
+| `EnhancedTaskForm` | Task input with list picker, due date, reminder, recurring |
 | `TaskItem` | Individual task (React.memo optimized) |
 | `TaskList` | Task container |
 | `RecurringTaskItem` | Task with weekday toggles |
@@ -82,18 +92,30 @@ signal-over-noise/
 
 ### sidebar.tsx
 - Collapsible sidebar (hamburger toggle)
+- **Bucket-grouped organization** with collapsible sections
 - Smart lists: My Day, Important, Planned, Tasks
 - Custom lists with add/delete
 - Search input with task filtering
-- Unfinished task count badges
+- Unfinished task count badges per bucket and list
 
 ### task-detail-panel.tsx
 - Slide-out panel for task editing
 - Steps (subtasks) with toggle/delete
-- Due date picker
+- Due date picker with overdue highlighting
+- **Reminder picker** (Later today, Tomorrow morning, etc.)
+- **Recurring task picker** (Daily, Weekdays, Weekly, Monthly, Yearly)
+- **Link field** with external URL support
+- **File/Note indicators** (badges for hasFiles, hasNote)
 - Notes textarea
 - My Day and Important toggles
 - Task deletion
+
+### data-seed.ts (NEW)
+- First-launch seed data system
+- **5 Buckets**: 2103, PERSONAL, RHL, RICH RE, REVENTE
+- **17 Bucket Groups**: Cleaning, Tasks, Inventory, etc.
+- **~60 Sample Tasks** with subtasks, due dates, links
+- Helper functions: `parseDueLabel()`, `toSteps()`, `buildTodos()`
 
 ### sync-modal.tsx
 - Setup mode: Create PIN, get sync code
@@ -103,7 +125,7 @@ signal-over-noise/
 
 ## Data Structures
 
-### Todo
+### Todo (Extended)
 ```typescript
 interface Todo {
   id: string              // crypto.randomUUID()
@@ -117,12 +139,44 @@ interface Todo {
   steps: TaskStep[]       // Subtasks
   notes: string           // Additional notes
   listId: string          // Parent list ID
+  // Extended fields (v2)
+  bucketId?: string       // Parent bucket ID
+  starred?: boolean       // Alias for important
+  link?: string | null    // External URL
+  hasFiles?: boolean      // Attachment indicator
+  hasNote?: boolean       // Note indicator
+  recurring?: string | null  // "daily" | "weekdays" | "weekly" | "monthly" | "yearly"
+  reminder?: string | null   // "Later today" | "Tomorrow morning" | etc.
 }
 
 interface TaskStep {
   id: string
   title: string
   completed: boolean
+}
+```
+
+### Bucket & BucketGroup (NEW)
+```typescript
+interface Bucket {
+  id: string
+  name: string
+  icon: string        // Emoji
+  accent: string      // Hex color
+  groupOrder: string[] // List IDs in order
+}
+
+interface BucketGroup {
+  id: string
+  name: string
+  icon: string
+  color: string
+  bucketId: string    // Parent bucket ID
+}
+
+interface SeedTodo {
+  // Same as Todo, plus:
+  dueLabel: string | null  // Human-readable due date
 }
 ```
 
@@ -179,6 +233,9 @@ interface TaskList {
 | `signal-over-noise-recurring-added` | string[] (dateKeys, last 7 days) |
 | `signal-over-noise-custom-lists` | TaskList[] |
 | `signal-over-noise-sync-state` | LocalSyncState |
+| `signal-over-noise-buckets` | Bucket[] |
+| `signal-over-noise-bucket-groups` | BucketGroup[] |
+| `signal-over-noise-seeded` | boolean (first-launch flag) |
 
 ## Sync System
 
@@ -221,6 +278,22 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...  # Vercel Blob storage token
 
 ## Configuration Files
 
+### eslint.config.mjs (ESLint 9)
+```javascript
+// Simplified flat config using typescript-eslint
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-explicit-any": "warn",
+    },
+  },
+  { ignores: [".next/**", "node_modules/**"] },
+)
+```
+
 ### tailwind.config.ts
 Standard Tailwind v4 config with content paths.
 
@@ -246,6 +319,18 @@ Uses `@theme` block for CSS variables:
 6. **Search**: Full-text across task titles and notes (null-safe)
 7. **Task Counts**: Pre-computed in single pass with memoization
 8. **Accessibility**: ARIA labels, keyboard navigation, focus management
+9. **Seed Data**: Auto-loads on first launch when localStorage is empty
+10. **Performance**: React.memo on TaskItem, useCallback/useMemo throughout
+
+## Seed Data (Default Buckets)
+
+| Bucket | Icon | Groups |
+|--------|------|--------|
+| 2103 | 🏠 | Cleaning, Some Day, Lumber, Measurements, Neighbors, Research, Services, Supplies, Tasks, Tools |
+| PERSONAL | 👤 | Tasks, Important, Hot Yoga Guide |
+| RHL | 🏢 | RHL ET AL |
+| RICH RE | 🏘️ | Tasks |
+| REVENTE | 💰 | Inventory, Completed |
 
 ## ms-todo-clone.jsx
 
@@ -270,12 +355,23 @@ Standalone React prototype (~807 lines) at project root. **Not integrated into t
 - Data migration for backward compatibility
 - Sync retry logic with exponential backoff
 
+### Session 4 (2026-01-31): Master-Todo Merge
+- **Bucket-grouped organization**: 5 buckets with 17 groups
+- **Extended Todo interface**: bucketId, starred, link, hasFiles, hasNote, recurring, reminder
+- **EnhancedTaskForm**: Target list picker, due date, reminder, recurring options
+- **Task detail panel**: Link editor, reminder/recurring pickers, file/note indicators
+- **Seed data system**: Auto-loads ~60 sample tasks on first launch
+- **Collapsible completed tasks**: Toggle visibility of completed items
+- **ESLint 9 migration**: Flat config format with FlatCompat
+- **Code review fixes**: Accessibility improvements, type safety, bug fixes
+
 ## Smart Lists Logic
 
 | List | Filter Criteria |
 |------|----------------|
 | My Day | `myDay === true` OR `dateKey === today` |
-| Important | `important === true` |
+| Important | `important === true` OR `starred === true` |
 | Planned | `dueDate !== null` |
 | Tasks | Default list (`listId === 'tasks'`) |
 | Custom | `listId === customList.id` |
+| Bucket Group | `listId === bucketGroup.id` |

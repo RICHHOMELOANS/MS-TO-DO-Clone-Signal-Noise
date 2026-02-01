@@ -312,3 +312,77 @@ Then import new repo `MS-TO-DO-Clone-Signal-Noise` to Vercel and connect Blob st
 - [ ] Deploy new repo to Vercel
 - [ ] Configure Vercel Blob storage for new deployment
 - [ ] Set up BLOB_READ_WRITE_TOKEN environment variable
+
+---
+
+## 2026-01-31 - Master-Todo Merge & Code Review
+
+### Work Completed
+
+1. **Merged Master-Todo Features**
+   - Created `src/lib/data-seed.ts` with bucket system and seed data
+   - Extended `Todo` interface with: `bucketId`, `starred`, `link`, `hasFiles`, `hasNote`, `recurring`, `reminder`
+   - Updated `sidebar.tsx` with bucket-grouped organization
+   - Updated `task-detail-panel.tsx` with link, reminder, recurring pickers
+   - Updated `todo-list.tsx` with seed data loading and EnhancedTaskForm
+
+2. **Senior Engineer Code Review & Fixes**
+   - Fixed completed tasks toggle (was `onClick={() => {}}`, now functional)
+   - Fixed lexical declarations in switch case block (ESLint error)
+   - Added `bucketsLoaded` and `bucketGroupsLoaded` flags to useLocalStorage
+   - Fixed seed data loading to wait for localStorage read
+   - Updated ESLint config to simplified typescript-eslint format
+
+3. **Bucket System Architecture**
+   - 5 Buckets: 2103, PERSONAL, RHL, RICH RE, REVENTE
+   - 17 Bucket Groups within buckets
+   - ~60 sample tasks with subtasks, due dates, links
+   - Auto-seeds on first launch when localStorage is empty
+
+4. **Documentation & Hooks**
+   - Updated `.claude/hooks.json` with improved Stop event hook
+   - Updated `CLAUDE.md` with complete project context
+   - Updated `docs/session-notes.md` with session history
+
+### Key Decisions
+
+- **Bucket seeding is independent of task seeding**: Buckets load even if user has existing tasks
+- **Existing tasks preserved**: Seed only adds tasks if localStorage is completely empty
+- **ESLint 9 simplified**: Removed FlatCompat due to circular reference issues, using direct typescript-eslint
+
+### Files Created/Modified
+
+**Created:**
+- `src/lib/data-seed.ts` - Seed data with buckets, groups, and sample todos
+
+**Modified:**
+- `src/components/todo-list.tsx` - Extended Todo interface, seed loading, EnhancedTaskForm
+- `src/components/sidebar.tsx` - Bucket-grouped sidebar with collapsible sections
+- `src/components/task-detail-panel.tsx` - Link, reminder, recurring pickers
+- `eslint.config.mjs` - Simplified to typescript-eslint config
+- `.claude/hooks.json` - Improved Stop event hook
+- `CLAUDE.md` - Comprehensive documentation update
+- `docs/session-notes.md` - This session
+
+### Issues Encountered
+
+1. **Seed data not loading**: useLocalStorage didn't expose `isLoaded` flag for buckets/groups
+   - Fixed by adding `bucketsLoaded` and `bucketGroupsLoaded` to dependency array
+
+2. **ESLint circular reference**: FlatCompat caused `Converting circular structure to JSON` error
+   - Fixed by switching to direct typescript-eslint config
+
+3. **Lexical declarations in case block**: ESLint error `no-case-declarations`
+   - Fixed by wrapping `default:` case in braces
+
+### Verification
+
+- TypeScript: `npx tsc --noEmit` - No errors
+- ESLint: `npx eslint src` - 0 errors, 6 warnings (acceptable)
+- Build: `npm run build` - Successful
+
+### Next Steps
+
+- [ ] Test bucket seeding in browser (clear localStorage, refresh)
+- [ ] Deploy to Vercel
+- [ ] Test sync with buckets and new Todo fields

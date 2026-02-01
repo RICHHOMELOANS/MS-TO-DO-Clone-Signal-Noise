@@ -3,7 +3,7 @@
     {
       "event": "Stop",
       "type": "prompt",
-      "prompt": "Before ending this session, please update the following files:\n\n1. **CLAUDE.md** - Update if any new patterns, components, or important technical decisions were made.\n\n2. **docs/session-notes.md** - Add a new entry with today's date including:\n   - Work completed this session\n   - Key decisions made\n   - Files created or modified\n   - Any issues encountered and how they were resolved\n   - Next steps or TODOs for future sessions\n\nThis ensures continuity across sessions and helps future Claude instances understand the project history."
+      "prompt": "Before ending this session, update the project documentation:\n\n**CLAUDE.md** - Update if any of these changed:\n- New files or components added\n- Architecture or data structure changes\n- New commands or configuration\n- Important implementation notes\n\n**docs/session-notes.md** - Add an entry with:\n- Date and brief session summary\n- Work completed (features, fixes, refactors)\n- Key decisions made and rationale\n- Files modified (list main ones)\n- Known issues discovered\n- Next steps or pending tasks\n\nReview what was accomplished and update both files. Skip if no significant changes."
     }
   ]
 }
