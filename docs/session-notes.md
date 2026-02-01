@@ -386,3 +386,34 @@ Then import new repo `MS-TO-DO-Clone-Signal-Noise` to Vercel and connect Blob st
 - [ ] Test bucket seeding in browser (clear localStorage, refresh)
 - [ ] Deploy to Vercel
 - [ ] Test sync with buckets and new Todo fields
+
+---
+
+## 2026-02-01 - Bug Fixes
+
+### Work Completed
+
+1. **Timer Not Starting on Task Add**
+   - Root cause: `setTimerState` was being called inside `setTodos` callback, causing React state batching issues
+   - Fix: Moved timer start logic outside the callback, checking `rawTodos` before calling `setTodos`
+   - File: `src/components/todo-list.tsx`
+
+2. **Seed Task Due Dates Not Populating**
+   - Root cause: `parseDueLabel()` used `toISOString()` which returns UTC time, causing timezone issues
+   - Fix: Created `formatLocalDate()` helper using local time (`getFullYear()`, `getMonth()`, `getDate()`)
+   - File: `src/lib/data-seed.ts`
+
+### Files Modified
+
+- `src/components/todo-list.tsx` - Fixed timer start logic
+- `src/lib/data-seed.ts` - Fixed date formatting to use local time
+
+### Testing Notes
+
+To re-seed with corrected due dates, clear localStorage:
+```javascript
+localStorage.removeItem('signal-over-noise-seeded')
+localStorage.removeItem('signal-over-noise-todos')
+localStorage.removeItem('signal-over-noise-buckets')
+localStorage.removeItem('signal-over-noise-bucket-groups')
+```

@@ -89,14 +89,19 @@ export const SEED_LISTS: BucketGroup[] = [
 // Helper to parse "Wed, Feb 18" style dates into YYYY-MM-DD
 // =============================================================================
 
+// Helper to format date as YYYY-MM-DD in local time
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
 function parseDueLabel(label: string | undefined): string | null {
   if (!label) return null
   const l = label.trim()
-  if (l === "Today") return new Date().toISOString().split("T")[0]
+  if (l === "Today") return formatLocalDate(new Date())
   if (l === "Tomorrow") {
     const d = new Date()
     d.setDate(d.getDate() + 1)
-    return d.toISOString().split("T")[0]
+    return formatLocalDate(d)
   }
   // Parse "Day, Mon DD" or "Day, Mon DD, YYYY"
   const parts = l.replace(/^[A-Za-z]+,\s*/, "").trim()
@@ -111,7 +116,7 @@ function parseDueLabel(label: string | undefined): string | null {
   const day = parseInt(match[2])
   const year = match[3] ? parseInt(match[3]) : new Date().getFullYear()
   const d = new Date(year, month, day)
-  return d.toISOString().split("T")[0]
+  return formatLocalDate(d)
 }
 
 // =============================================================================

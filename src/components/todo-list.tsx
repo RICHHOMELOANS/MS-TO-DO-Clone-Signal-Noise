@@ -918,17 +918,16 @@ export function TodoList() {
       recurring: opts?.recurring ?? null,
       reminder: opts?.reminder ?? null,
     }
-    setTodos((prev) => {
-      const todayTaskCount = prev.filter(t => t.dateKey === todayKey).length
-      if (todayTaskCount === 0 && (!timerState.startTime || timerState.dateKey !== todayKey)) {
-        const now = Date.now()
-        const newTimerState: TimerState = { startTime: now, pausedAt: null, totalPausedTime: 0, isPaused: false, dateKey: todayKey }
-        setTimerState(newTimerState)
-        localStorage.setItem(TIMER_KEY, JSON.stringify(newTimerState))
-      }
-      return [todo, ...prev]
-    })
-  }, [setTodos, timerState.startTime, timerState.dateKey, todayKey, selectedListId, bucketGroups])
+    // Start timer if this is the first task of the day (check before adding)
+    const todayTaskCount = rawTodos.filter(t => t.dateKey === todayKey).length
+    if (todayTaskCount === 0 && (!timerState.startTime || timerState.dateKey !== todayKey)) {
+      const now = Date.now()
+      const newTimerState: TimerState = { startTime: now, pausedAt: null, totalPausedTime: 0, isPaused: false, dateKey: todayKey }
+      setTimerState(newTimerState)
+      localStorage.setItem(TIMER_KEY, JSON.stringify(newTimerState))
+    }
+    setTodos((prev) => [todo, ...prev])
+  }, [setTodos, rawTodos, timerState.startTime, timerState.dateKey, todayKey, selectedListId, bucketGroups])
 
   const addRecurringTask = React.useCallback((text: string) => {
     setRecurringTasks((prev) => [...prev, { id: crypto.randomUUID(), text, weekdays: [1, 2, 3, 4, 5] }])
