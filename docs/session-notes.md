@@ -206,3 +206,89 @@ Development history for Signal Over Noise project.
 - [ ] Consider WebSocket for real-time sync
 - [ ] Add data export/import functionality
 - [ ] Deploy updated version to Vercel
+
+---
+
+## 2026-01-27 - Sync Deployment Fix & Documentation
+
+### Work Completed
+
+1. **CLAUDE.md Overhaul**
+   - Rewrote documentation with comprehensive project context
+   - Added tech stack table with all dependencies
+   - Added full project structure with line counts
+   - Documented all data structures (Todo, TaskStep, RecurringTask, TimerState, PauseLog, TaskList)
+   - Added localStorage keys reference table
+   - Documented sync API endpoints and security features
+   - Added smart lists filter logic table
+   - Explained `ms-todo-clone.jsx` purpose (standalone prototype)
+
+2. **Diagnosed Sync Issue on Production**
+   - User reported "Sync code not found" error on https://v0-to-do-list-pwa.vercel.app/
+   - Investigated codebase - sync code on `main` branch matched `RHL-To-Do`
+   - Root cause: `BLOB_READ_WRITE_TOKEN` environment variable not exposed to the app
+   - Vercel Blob store was connected but variable wasn't accessible to runtime
+
+3. **Resolution**
+   - User confirmed Blob store connected in Vercel dashboard
+   - Verified token matched local `.env.local`
+   - Redeployed app to pick up environment variable
+   - Sync now working - successfully generated new `SIGNAL-XXXXXX` code
+
+### Key Findings
+
+- **Data Loss**: User's data from previous day was lost
+  - localStorage was cleared (browser data wipe)
+  - Sync wasn't working at the time, so no cloud backup existed
+  - No recovery possible
+
+- **Deployment Gotcha**: Connecting Vercel Blob store doesn't automatically expose the token
+  - Must verify environment variable is named exactly `BLOB_READ_WRITE_TOKEN`
+  - Must redeploy after adding/changing environment variables
+
+### Files Modified
+
+- `CLAUDE.md` - Complete rewrite with comprehensive documentation
+- `docs/session-notes.md` - Added this session
+
+### Lessons Learned
+
+1. Always verify environment variables are properly configured in production before relying on sync
+2. Save sync code + PIN in a password manager immediately after setup
+3. Consider adding a "sync status" indicator that warns when sync has never succeeded
+
+### Next Steps
+
+- [ ] Add sync health check on app load (verify token works)
+- [ ] Add warning if sync has never completed successfully
+- [ ] Consider local backup export feature as failsafe
+
+---
+
+## 2026-01-31 - Repository Migration
+
+### Work Completed
+
+1. **Created New Repository**
+   - Migrated from branch on `v0-to-do-list-pwa` to dedicated repo
+   - New repo: https://github.com/RICHHOMELOANS/MS-TO-DO-Clone-Signal-Noise
+   - Pushed `RHL-To-Do` branch as `main` to new repo
+
+2. **Cleaned Up Old Repository**
+   - Deleted `RHL-To-Do` branch from `v0-to-do-list-pwa`
+   - Old repo remains clean with only original code
+
+3. **Updated Documentation**
+   - Updated `CLAUDE.md` with new repo URL
+   - Updated `docs/session-notes.md` with migration notes
+
+### Repository Structure
+
+- **New Repo**: https://github.com/RICHHOMELOANS/MS-TO-DO-Clone-Signal-Noise (this project)
+- **Old Repo**: https://github.com/RICHHOMELOANS/v0-to-do-list-pwa (original simple todo app)
+
+### Next Steps
+
+- [ ] Deploy new repo to Vercel
+- [ ] Configure Vercel Blob storage for new deployment
+- [ ] Set up BLOB_READ_WRITE_TOKEN environment variable
