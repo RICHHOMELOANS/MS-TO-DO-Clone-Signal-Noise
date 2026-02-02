@@ -308,13 +308,16 @@ interface SetTimeModalProps { isOpen: boolean; onSet: (startTime: Date) => void;
 
 function SetTimeModal({ isOpen, onSet, onCancel }: SetTimeModalProps) {
   const [timeValue, setTimeValue] = React.useState("")
+  const [error, setError] = React.useState<string | null>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     if (isOpen) {
       const now = new Date()
       setTimeValue(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`)
-      setTimeout(() => inputRef.current?.focus(), 0)
+      setError(null)
+      // Focus input after React renders
+      inputRef.current?.focus()
     }
   }, [isOpen])
 
@@ -332,19 +335,28 @@ function SetTimeModal({ isOpen, onSet, onCancel }: SetTimeModalProps) {
     const [hours, minutes] = timeValue.split(':').map(Number)
     const startTime = new Date()
     startTime.setHours(hours, minutes, 0, 0)
+
+    // Validate start time is not in the future
+    if (startTime.getTime() > Date.now()) {
+      setError("Start time cannot be in the future")
+      return
+    }
+
+    setError(null)
     onSet(startTime)
   }
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onCancel() }} role="dialog" aria-modal="true">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onCancel() }} role="dialog" aria-modal="true" aria-labelledby="set-time-modal-title">
       <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-center">Set Start Time</h3>
+        <h3 id="set-time-modal-title" className="text-lg font-semibold text-center">Set Start Time</h3>
         <p className="text-sm text-muted-foreground text-center">Enter the time you started working today</p>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input ref={inputRef} type="time" value={timeValue} onChange={(e) => setTimeValue(e.target.value)}
-            className="w-full h-12 px-4 bg-background border border-border rounded-md text-center text-lg font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" required />
+          <input ref={inputRef} type="time" value={timeValue} onChange={(e) => { setTimeValue(e.target.value); setError(null) }}
+            className="w-full h-12 px-4 bg-background border border-border rounded-md text-center text-lg font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" required aria-describedby={error ? "set-time-error" : undefined} />
+          {error && <p id="set-time-error" className="text-sm text-destructive text-center" role="alert">{error}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={onCancel} className="flex-1 p-3 text-sm text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors">Cancel</button>
             <button type="submit" className="flex-1 p-3 text-sm bg-accent text-accent-foreground rounded-md hover:bg-accent/90 transition-colors">Set Time</button>
@@ -447,9 +459,9 @@ function EnhancedTaskForm({ onAdd, placeholder = "Add a new task...", currentLis
     reset()
   }, [text, targetList, dueDate, reminder, recurring, onAdd, reset])
 
-  const todayISO = new Date().toISOString().split("T")[0]
-  const tomorrowISO = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0] }, [])
-  const nextWeekISO = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().split("T")[0] }, [])
+  const todayISO = getLocalDateKey()
+  const tomorrowISO = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 1); return getLocalDateKey(d) }, [])
+  const nextWeekISO = React.useMemo(() => { const d = new Date(); d.setDate(d.getDate() + 7); return getLocalDateKey(d) }, [])
 
   const targetName = targetList ? allLists.find(l => l.id === targetList)?.name : null
 
@@ -562,18 +574,22 @@ function EnhancedTaskForm({ onAdd, placeholder = "Add a new task...", currentLis
 
 function formatDueDateShort(dateStr: string | null): string | null {
   if (!dateStr) return null
-  const date = new Date(dateStr)
-  const today = new Date()
-  const todayStr = today.toISOString().split("T")[0]
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0]
+  const todayStr = getLocalDateKey()
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = getLocalDateKey(tomorrow)
   if (dateStr === todayStr) return "Today"
   if (dateStr === tomorrowStr) return "Tomorrow"
+  // Parse the dateStr as local date (YYYY-MM-DD format)
+  const [year, month, day] = dateStr.split("-").map(Number)
+  const date = new Date(year, month - 1, day)
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
 function isOverdue(dateStr: string | null): boolean {
   if (!dateStr) return false
-  return new Date(dateStr) < new Date(new Date().toISOString().split("T")[0])
+  const todayStr = getLocalDateKey()
+  return dateStr < todayStr
 }
 
 interface TaskItemProps {
@@ -1078,20 +1094,7 @@ export function TodoList() {
     setTodos((prev) => prev.map((todo) => todo.dateKey !== todayKey && !todo.completed ? { ...todo, dateKey: todayKey } : todo))
   }, [todayKey, setTodos])
 
-  // --- Loading state ---
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
-        <div className="max-w-lg mx-auto space-y-8">
-          <div className="h-20 animate-pulse bg-muted rounded-xl" />
-          <div className="h-32 animate-pulse bg-muted rounded-xl" />
-          <div className="h-12 animate-pulse bg-muted rounded-md" />
-        </div>
-      </div>
-    )
-  }
-
-  const getListTitle = () => {
+  const listTitle = React.useMemo(() => {
     if (searchQuery) return "Search Results"
     switch (selectedListId) {
       case "myday": return "My Day"
@@ -1105,6 +1108,19 @@ export function TodoList() {
         return customList?.name || "Tasks"
       }
     }
+  }, [searchQuery, selectedListId, bucketGroups, buckets, customLists])
+
+  // --- Loading state ---
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-4 md:p-8">
+        <div className="max-w-lg mx-auto space-y-8">
+          <div className="h-20 animate-pulse bg-muted rounded-xl" />
+          <div className="h-32 animate-pulse bg-muted rounded-xl" />
+          <div className="h-12 animate-pulse bg-muted rounded-md" />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -1125,7 +1141,7 @@ export function TodoList() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight">{getListTitle()}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{listTitle}</h1>
             {selectedListId === "myday" && !searchQuery && (
               <span className="text-sm text-muted-foreground">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
             )}

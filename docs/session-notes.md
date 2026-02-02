@@ -417,3 +417,51 @@ localStorage.removeItem('signal-over-noise-todos')
 localStorage.removeItem('signal-over-noise-buckets')
 localStorage.removeItem('signal-over-noise-bucket-groups')
 ```
+
+---
+
+## 2026-02-02 - SetTimeModal & Senior Code Review
+
+### Work Completed
+
+1. **SetTimeModal Feature**
+   - Added ability to manually set timer start time if user missed starting at beginning of day
+   - New "Set" button in TimerCard with Clock icon
+   - Modal with time input, defaults to current time
+   - Validates that start time is not in the future
+
+2. **Senior Engineer Code Review & Fixes**
+   - **Accessibility**: Added `aria-labelledby` and `aria-describedby` to SetTimeModal
+   - **Validation**: Added error state preventing future start times with user feedback
+   - **Code cleanup**: Removed `setTimeout` focus hack, using direct focus call
+   - **UTC date bug fix**: Changed `toISOString().split("T")[0]` to `getLocalDateKey()` in:
+     - `EnhancedTaskForm` (todayISO, tomorrowISO, nextWeekISO)
+     - `formatDueDateShort()` function
+     - `isOverdue()` function
+   - **Performance**: Memoized `getListTitle` → `listTitle` with useMemo, moved before early return
+
+### Key Decisions
+
+- **Local dates over UTC**: Using `getLocalDateKey()` consistently prevents timezone-related off-by-one errors near midnight
+- **Direct focus**: Removed setTimeout hack since React's useEffect already runs after DOM updates
+- **Error display**: Added inline error message with `role="alert"` for screen reader accessibility
+
+### Files Modified
+
+- `src/components/todo-list.tsx`
+  - SetTimeModal: added error state, validation, aria attributes
+  - EnhancedTaskForm: fixed UTC date helpers
+  - formatDueDateShort/isOverdue: fixed to use local dates
+  - Memoized listTitle
+
+### Verification
+
+- TypeScript: `npx tsc --noEmit` - No errors
+- ESLint: `npx eslint src` - 0 errors, 6 warnings (pre-existing)
+- Build: `npm run build` - Successful
+
+### Next Steps
+
+- [ ] Deploy to Vercel
+- [ ] Test SetTimeModal in browser
+- [ ] Test date handling near midnight
