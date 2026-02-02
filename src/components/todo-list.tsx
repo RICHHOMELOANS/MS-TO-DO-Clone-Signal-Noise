@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Plus, Moon, Sun, Trash2, Check, RotateCcw, Pause, Play, ChevronDown, RefreshCw, Calendar, Star, Link2, Bell } from "lucide-react"
+import { Plus, Moon, Sun, Trash2, Check, RotateCcw, Pause, Play, ChevronDown, RefreshCw, Calendar, Star, Link2, Bell, Clock } from "lucide-react"
 import { useTheme } from "next-themes"
 import { cn } from "@/lib/utils"
 import { SyncModal, SyncButton } from "@/components/sync-modal"
@@ -304,9 +304,60 @@ function PauseModal({ isOpen, onSelect, onCancel }: PauseModalProps) {
   )
 }
 
-interface TimerCardProps { timeRemaining: number; timerState: TimerState; currentPauseReason: PauseReason | null; todayKey: string; onReset: () => void; onPause: () => void; onResume: () => void }
+interface SetTimeModalProps { isOpen: boolean; onSet: (startTime: Date) => void; onCancel: () => void }
 
-function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, onReset, onPause, onResume }: TimerCardProps) {
+function SetTimeModal({ isOpen, onSet, onCancel }: SetTimeModalProps) {
+  const [timeValue, setTimeValue] = React.useState("")
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const now = new Date()
+      setTimeValue(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`)
+      setTimeout(() => inputRef.current?.focus(), 0)
+    }
+  }, [isOpen])
+
+  React.useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', handleKeyDown)
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', handleKeyDown); document.body.style.overflow = '' }
+  }, [isOpen, onCancel])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!timeValue) return
+    const [hours, minutes] = timeValue.split(':').map(Number)
+    const startTime = new Date()
+    startTime.setHours(hours, minutes, 0, 0)
+    onSet(startTime)
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onCancel() }} role="dialog" aria-modal="true">
+      <div className="bg-card border border-border rounded-xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-center">Set Start Time</h3>
+        <p className="text-sm text-muted-foreground text-center">Enter the time you started working today</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input ref={inputRef} type="time" value={timeValue} onChange={(e) => setTimeValue(e.target.value)}
+            className="w-full h-12 px-4 bg-background border border-border rounded-md text-center text-lg font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" required />
+          <div className="flex gap-2">
+            <button type="button" onClick={onCancel} className="flex-1 p-3 text-sm text-muted-foreground hover:text-foreground border border-border rounded-md transition-colors">Cancel</button>
+            <button type="submit" className="flex-1 p-3 text-sm bg-accent text-accent-foreground rounded-md hover:bg-accent/90 transition-colors">Set Time</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+interface TimerCardProps { timeRemaining: number; timerState: TimerState; currentPauseReason: PauseReason | null; todayKey: string; onReset: () => void; onPause: () => void; onResume: () => void; onSetTime: () => void }
+
+function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, onReset, onPause, onResume, onSetTime }: TimerCardProps) {
   const isRunning = timerState.startTime !== null && timerState.dateKey === todayKey
   const isExpired = timeRemaining <= 0 && isRunning
   const endTime = calculateEndTime(timerState)
@@ -326,6 +377,7 @@ function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, on
           {isRunning && (
             <button type="button" onClick={onReset} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors" aria-label="Reset timer"><RotateCcw className="w-3 h-3" />Reset</button>
           )}
+          <button type="button" onClick={onSetTime} className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors" aria-label="Set start time"><Clock className="w-3 h-3" />Set</button>
         </div>
       </div>
       <div className={cn("text-4xl md:text-5xl font-mono font-bold tracking-tight text-center tabular-nums", isExpired ? "text-destructive" : timerState.isPaused ? "text-yellow-500" : "text-foreground")}>
@@ -333,7 +385,7 @@ function TimerCard({ timeRemaining, timerState, currentPauseReason, todayKey, on
       </div>
       {isRunning && endTime && !isExpired && <p className="text-center text-sm font-medium text-accent mt-2">Ends at {formatEndTime(endTime)}</p>}
       <p className="text-center text-xs text-muted-foreground mt-2">
-        {isExpired ? "Time's up! Reset to start a new cycle" : timerState.isPaused && currentPauseReason ? `Paused: ${currentPauseReason}` : isRunning ? "Focus on your signal tasks" : "Timer starts when you add your first task"}
+        {isExpired ? "Time's up! Reset to start a new cycle" : timerState.isPaused && currentPauseReason ? `Paused: ${currentPauseReason}` : isRunning ? "Focus on your signal tasks" : "Click Set to start your timer"}
       </p>
     </div>
   )
@@ -702,6 +754,7 @@ export function TodoList() {
   const [timerState, setTimerState] = React.useState<TimerState>({ startTime: null, pausedAt: null, totalPausedTime: 0, isPaused: false, dateKey: null })
   const [mounted, setMounted] = React.useState(false)
   const [showPauseModal, setShowPauseModal] = React.useState(false)
+  const [showSetTimeModal, setShowSetTimeModal] = React.useState(false)
   const [currentPauseReason, setCurrentPauseReason] = React.useState<PauseReason | null>(null)
   const [showRecurring, setShowRecurring] = React.useState(false)
   const [showCompleted, setShowCompleted] = React.useState(true)
@@ -989,6 +1042,16 @@ export function TodoList() {
 
   const handlePauseClick = React.useCallback(() => { setShowPauseModal(true) }, [])
 
+  const handleSetTimeClick = React.useCallback(() => { setShowSetTimeModal(true) }, [])
+
+  const handleSetTime = React.useCallback((startTime: Date) => {
+    const newState: TimerState = { startTime: startTime.getTime(), pausedAt: null, totalPausedTime: 0, isPaused: false, dateKey: todayKey }
+    setTimerState(newState)
+    localStorage.setItem(TIMER_KEY, JSON.stringify(newState))
+    setShowSetTimeModal(false)
+    setCurrentPauseReason(null)
+  }, [todayKey])
+
   const handlePauseSelect = React.useCallback((reason: PauseReason) => {
     setShowPauseModal(false)
     const now = Date.now()
@@ -1077,7 +1140,7 @@ export function TodoList() {
           <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
             {selectedListId === "myday" && !searchQuery && (
               <>
-                <TimerCard timeRemaining={timeRemaining} timerState={timerState} currentPauseReason={currentPauseReason} todayKey={todayKey} onReset={resetTimer} onPause={handlePauseClick} onResume={handleResume} />
+                <TimerCard timeRemaining={timeRemaining} timerState={timerState} currentPauseReason={currentPauseReason} todayKey={todayKey} onReset={resetTimer} onPause={handlePauseClick} onResume={handleResume} onSetTime={handleSetTimeClick} />
                 <ProgressCard completed={completedCount} total={todayTodos.length} />
                 {previousIncompleteTasks.length > 0 && (
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
@@ -1153,6 +1216,7 @@ export function TodoList() {
       )}
 
       <PauseModal isOpen={showPauseModal} onSelect={handlePauseSelect} onCancel={() => setShowPauseModal(false)} />
+      <SetTimeModal isOpen={showSetTimeModal} onSet={handleSetTime} onCancel={() => setShowSetTimeModal(false)} />
       <SyncModal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} onSync={handleSyncData} getCurrentData={getCurrentData} />
     </div>
   )
